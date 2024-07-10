@@ -39,6 +39,12 @@ shader_image_nodes = {
     'emission': 'Image Texture',
 }
 
+shader_normal_nodes = {
+    'principled': 'Normal Map',
+    'diffuse': 'Normal Map',
+    'emission': 'Normal Map',
+}
+
 
 def get_materials(ob: bpy.types.Object) -> List[bpy.types.Material]:
     return [mat_slot.material for mat_slot in ob.material_slots if mat_slot.material]
