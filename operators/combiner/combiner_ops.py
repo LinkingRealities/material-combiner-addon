@@ -206,8 +206,8 @@ def _get_image(mat: bpy.types.Material) -> Union[bpy.types.Image, None]:
 def _get_image_size(mat: bpy.types.Material, img: bpy.types.Image) -> Tuple[int, int]:
     return (
         (
-            min(mat.smc_size_width, img.size[0]),
-            min(mat.smc_size_height, img.size[1]),
+            mat.smc_size_width,
+            mat.smc_size_height,
         )
         if mat.smc_size
         else cast(Tuple[int, int], img.size)
