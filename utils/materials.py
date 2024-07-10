@@ -29,6 +29,13 @@ shader_types = OrderedDict([
     ('emissionCol', {'Emission'}),
 ])
 
+shader_main_nodes = {
+    'principled': 'Principled BSDF',
+    'principledCol': 'Principled BSDF',
+    'diffuse': 'Diffuse BSDF',
+    'diffuseCol': 'Diffuse BSDF',
+}
+
 shader_image_nodes = {
     'mmd': 'mmd_base_tex',
     'mtoon': 'Mtoon1BaseColorTexture.Image',
@@ -41,7 +48,9 @@ shader_image_nodes = {
 
 shader_normal_nodes = {
     'principled': 'Normal Map',
+    'principledCol': 'Normal Map',
     'diffuse': 'Normal Map',
+    'diffuseCol': 'Normal Map',
     'emission': 'Normal Map',
 }
 
@@ -91,8 +100,17 @@ def sort_materials(mat_list: List[bpy.types.Material]) -> ValuesView[MatDictItem
         elif node_tree:
             shader = get_shader_type(mat)
             node_name = shader_image_nodes.get(shader)
-            if node_name:
-                packed_file = get_packed_file(node_tree.nodes[node_name].image)
+            node = node_tree.nodes[node_name] if node_name else None
+
+            if node is None:
+                node_name = shader_normal_nodes.get(shader)
+                if node_name:
+                    normal_map_node = node_tree.nodes.get(node_name)
+                    if normal_map_node and normal_map_node.inputs['Color'].is_linked:
+                        node = normal_map_node.inputs['Color'].links[0].from_node
+
+            if node is not None:
+                packed_file = get_packed_file(node.image)
 
         if packed_file:
             mat_dict[(packed_file, get_diffuse(mat) if mat.smc_diffuse else None)].append(mat)

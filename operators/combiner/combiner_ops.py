@@ -32,7 +32,11 @@ from ...utils.images import get_image
 from ...utils.images import get_packed_file
 from ...utils.materials import get_diffuse
 from ...utils.materials import get_shader_type
-from ...utils.materials import shader_image_nodes, shader_normal_nodes
+from ...utils.materials import (
+    shader_image_nodes,
+    shader_normal_nodes,
+    shader_main_nodes,
+)
 from ...utils.materials import sort_materials
 from ...utils.objects import align_uv
 from ...utils.objects import get_polys
@@ -195,11 +199,17 @@ def _size_sorting(item: Sequence[StructureItem]) -> Tuple[int, int, int, Union[s
 
 
 def _get_image(mat: bpy.types.Material) -> Union[bpy.types.Image, None]:
-    if globs.is_blender_2_79_or_older:
-        return get_image(get_texture(mat))
-
     shader = get_shader_type(mat) if mat else None
     node = mat.node_tree.nodes.get(shader_image_nodes.get(shader, ''))
+
+    # try with normal map if no image found
+    if node is None:
+        node_name = shader_normal_nodes.get(shader)
+        if node_name:
+            normal_map_node = mat.node_tree.nodes.get(node_name)
+            if normal_map_node and normal_map_node.inputs['Color'].is_linked:
+                node = normal_map_node.inputs['Color'].links[0].from_node
+    
     return node.image if node else None
 
 
@@ -291,29 +301,31 @@ def get_atlas_normal(scn: Scene, data: Structure, atlas_size: Tuple[int, int]) -
 
 
 def _set_normal(item: StructureItem, mat: bpy.types.Material) -> None:
-    if globs.is_blender_2_80_or_newer:
-        shader = get_shader_type(mat) if mat else None
-        node_name = shader_normal_nodes.get(shader)
-        
-        if node_name:
-            normal_map_node = mat.node_tree.nodes.get(node_name)
+    shader = get_shader_type(mat) if mat else None
+    node_name = shader_normal_nodes.get(shader)
+    
+    if node_name:
+        normal_map_node = mat.node_tree.nodes.get(node_name)
 
-            if normal_map_node and normal_map_node.inputs['Color'].is_linked:
-                image_texture_node = normal_map_node.inputs['Color'].links[0].from_node
-                item['gfx']['normal'] = get_packed_file(image_texture_node.image)
-            else:
-                item['gfx']['normal'] = None
+        if normal_map_node and normal_map_node.inputs['Color'].is_linked:
+            image_texture_node = normal_map_node.inputs['Color'].links[0].from_node
+            item['gfx']['normal'] = get_packed_file(image_texture_node.image)
         else:
             item['gfx']['normal'] = None
+    else:
+        item['gfx']['normal'] = None
 
 
 def _set_image_or_color(item: StructureItem, mat: bpy.types.Material) -> None:
-    if globs.is_blender_2_80_or_newer:
-        shader = get_shader_type(mat) if mat else None
-        node_name = shader_image_nodes.get(shader)
-        item['gfx']['img_or_color'] = get_packed_file(mat.node_tree.nodes.get(node_name).image) if node_name else None
-    else:
-        item['gfx']['img_or_color'] = get_packed_file(get_image(get_texture(mat)))
+    shader = get_shader_type(mat) if mat else None
+    node_name = shader_main_nodes.get(shader)
+
+    if node_name:
+        main_node = mat.node_tree.nodes.get(node_name)
+
+        if main_node and main_node.inputs['Base Color'].is_linked:
+            image_texture_node = main_node.inputs['Base Color'].links[0].from_node
+            item['gfx']['img_or_color'] = get_packed_file(image_texture_node.image)
 
     if not item['gfx']['img_or_color']:
         item['gfx']['img_or_color'] = get_diffuse(mat)
@@ -324,7 +336,7 @@ def _paste_gfx(scn: Scene, item: StructureItem, mat: bpy.types.Material, img: Im
         return
 
     img.paste(
-        _get_gfx(scn, mat, item, item['gfx']['img_or_color']),
+        _get_gfx(scn, mat, item, item['gfx']['img_or_color'], True),
         (int(item['gfx']['fit']['x'] + half_gaps), int(item['gfx']['fit']['y'] + half_gaps))
     )
 
@@ -334,13 +346,13 @@ def _paste_gfx_normal(scn: Scene, item: StructureItem, mat: bpy.types.Material, 
         return
 
     img.paste(
-        _get_gfx(scn, mat, item, item['gfx']['normal']),
+        _get_gfx(scn, mat, item, item['gfx']['normal'], False),
         (int(item['gfx']['fit']['x'] + half_gaps), int(item['gfx']['fit']['y'] + half_gaps))
     )
 
 
 def _get_gfx(scn: Scene, mat: bpy.types.Material, item: StructureItem,
-             img_or_color: Union[bpy.types.PackedFile, Tuple, None]) -> ImageType:
+             img_or_color: Union[bpy.types.PackedFile, Tuple, None], multiply_color: bool) -> ImageType:
     size = cast(Tuple[int, int], tuple(int(size - scn.smc_gaps) for size in item['gfx']['size']))
 
     if not img_or_color:
@@ -356,7 +368,7 @@ def _get_gfx(scn: Scene, mat: bpy.types.Material, item: StructureItem,
         img.thumbnail((mat.smc_size_width, mat.smc_size_height), resampling)
     if max(item['gfx']['uv_size'], default=0) > 1:
         img = _get_uv_image(item, img, size)
-    if mat.smc_diffuse:
+    if mat.smc_diffuse and multiply_color:
         diffuse_img = Image.new(img.mode, size, get_diffuse(mat))
         img = ImageChops.multiply(img, diffuse_img)
 

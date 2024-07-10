@@ -33,8 +33,8 @@ class Combiner(bpy.types.Operator):
             self.report({'ERROR'}, 'The output image size of {0}x{1}px is too large'.format(*atlas_size))
             return {'FINISHED'}
 
-        atlas = get_atlas(scn, self.structure, atlas_size)
         atlas_n = get_atlas_normal(scn, self.structure, atlas_size)
+        atlas = get_atlas(scn, self.structure, atlas_size)
         align_uvs(scn, self.structure, atlas.size, size)
         comb_mats = get_comb_mats(scn, atlas, atlas_n, self.mats_uv)
         assign_comb_mats(scn, self.data, comb_mats)

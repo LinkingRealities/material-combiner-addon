@@ -50,10 +50,12 @@ class PropertyMenu(bpy.types.Operator):
         if image:
             self._show_image(col, image)
             self._show_diffuse_color(col, item, image)
-            self._show_size_settings(col, item)
         else:
             col.label(text='Image size: {0}x{0}px'.format(scn.smc_diffuse_size))
             self._show_diffuse_color(col, item)
+
+        self._show_size_settings(col, item)
+        
 
     @staticmethod
     def _show_image(col: bpy.types.UILayout, image: bpy.types.Image) -> None:
