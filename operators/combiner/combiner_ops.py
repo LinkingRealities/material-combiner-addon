@@ -30,7 +30,7 @@ from ...type_annotations import Structure
 from ...type_annotations import StructureItem
 from ...utils.images import get_image
 from ...utils.images import get_packed_file
-from ...utils.materials import get_diffuse
+from ...utils.materials import get_diffuse, rgb_to_255_scale
 from ...utils.materials import get_shader_type
 from ...utils.materials import (
     shader_image_nodes,
@@ -324,10 +324,16 @@ def _set_image_or_color(item: StructureItem, mat: bpy.types.Material) -> None:
         main_node = mat.node_tree.nodes.get(node_name)
 
         if main_node and main_node.inputs['Base Color'].is_linked:
-            image_texture_node = main_node.inputs['Base Color'].links[0].from_node
+            input_node = main_node.inputs['Base Color'].links[0].from_node
 
-            if hasattr(image_texture_node, "image"):
-                item['gfx']['img_or_color'] = get_packed_file(image_texture_node.image)     
+            # If the shader has a color multiply before the image, save the color and move to the linked node
+            # (that has the actual image)
+            if input_node.bl_idname == "ShaderNodeMix":
+                item['color_tint'] = rgb_to_255_scale(input_node.inputs[7].default_value)
+                input_node = input_node.inputs[6].links[0].from_node
+
+            if hasattr(input_node, "image"):
+                item['gfx']['img_or_color'] = get_packed_file(input_node.image)     
 
     if not item['gfx']['img_or_color']:
         item['gfx']['img_or_color'] = get_diffuse(mat)
@@ -373,6 +379,9 @@ def _get_gfx(scn: Scene, mat: bpy.types.Material, item: StructureItem,
     if mat.smc_diffuse and multiply_color:
         diffuse_img = Image.new(img.mode, size, get_diffuse(mat))
         img = ImageChops.multiply(img, diffuse_img)
+    if 'color_tint' in item:
+        color_tint_img = Image.new(img.mode, size, item['color_tint'])
+        img = ImageChops.multiply(img, color_tint_img)
 
     return img
 
