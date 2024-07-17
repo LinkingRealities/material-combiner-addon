@@ -328,9 +328,17 @@ def _set_image_or_color(item: StructureItem, mat: bpy.types.Material) -> None:
 
             # If the shader has a color multiply before the image, save the color and move to the linked node
             # (that has the actual image)
-            if input_node.bl_idname == "ShaderNodeMix":
-                item['color_tint'] = rgb_to_255_scale(input_node.inputs[7].default_value)
-                input_node = input_node.inputs[6].links[0].from_node
+            if "ShaderNodeMix" in input_node.bl_idname:
+                # Depending on the blender version, the mix node might change. This aims to support both versions found so far
+                if len(input_node.inputs) >= 7:
+                    color_input_index = 7
+                    image_input_index = 6
+                else:
+                    color_input_index = 2
+                    image_input_index = 1
+
+                item['color_tint'] = rgb_to_255_scale(input_node.inputs[color_input_index].default_value)
+                input_node = input_node.inputs[image_input_index].links[0].from_node
 
             if hasattr(input_node, "image"):
                 item['gfx']['img_or_color'] = get_packed_file(input_node.image)     
