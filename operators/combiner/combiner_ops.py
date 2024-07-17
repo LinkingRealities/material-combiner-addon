@@ -325,7 +325,9 @@ def _set_image_or_color(item: StructureItem, mat: bpy.types.Material) -> None:
 
         if main_node and main_node.inputs['Base Color'].is_linked:
             image_texture_node = main_node.inputs['Base Color'].links[0].from_node
-            item['gfx']['img_or_color'] = get_packed_file(image_texture_node.image)
+
+            if hasattr(image_texture_node, "image"):
+                item['gfx']['img_or_color'] = get_packed_file(image_texture_node.image)     
 
     if not item['gfx']['img_or_color']:
         item['gfx']['img_or_color'] = get_diffuse(mat)
