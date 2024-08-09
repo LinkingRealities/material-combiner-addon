@@ -309,7 +309,11 @@ def _set_normal(item: StructureItem, mat: bpy.types.Material) -> None:
 
         if normal_map_node and normal_map_node.inputs['Color'].is_linked:
             image_texture_node = normal_map_node.inputs['Color'].links[0].from_node
-            item['gfx']['normal'] = get_packed_file(image_texture_node.image)
+
+            if hasattr(image_texture_node, "image"):
+                item['gfx']['normal'] = get_packed_file(image_texture_node.image)
+            else:
+                item['gfx']['normal'] = None
         else:
             item['gfx']['normal'] = None
     else:
