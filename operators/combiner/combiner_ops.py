@@ -300,6 +300,30 @@ def get_atlas_normal(scn: Scene, data: Structure, atlas_size: Tuple[int, int]) -
     return img
 
 
+def get_atlas_roughness(scn: Scene, data: Structure, atlas_size: Tuple[int, int]) -> ImageType:
+    smc_size = (scn.smc_size_width, scn.smc_size_height)
+
+    # Since the roughness is not as important as the color and the normal, reduce it's size by 4
+    map_size = (int(atlas_size[0] / 4), int(atlas_size[1] / 4))
+
+    img = Image.new('RGBA', map_size, color=(0, 0, 0, 255))  # White by default (max roughness)
+    half_gaps = int(scn.smc_gaps / 2)
+
+    for mat, item in data.items():
+        _set_roughness(item, mat)
+        _paste_gfx_roughness(scn, item, mat, img, half_gaps)
+
+    if scn.smc_size in ['CUST', 'STRICTCUST']:
+        img.thumbnail(smc_size, resampling)
+
+    if scn.smc_size == 'STRICTCUST':
+        canvas_img = Image.new('RGB', smc_size, color=(255, 255, 255))
+        canvas_img.paste(img)
+        return canvas_img
+
+    return img
+
+
 def _set_normal(item: StructureItem, mat: bpy.types.Material) -> None:
     shader = get_shader_type(mat) if mat else None
     node_name = shader_normal_nodes.get(shader)
@@ -318,6 +342,31 @@ def _set_normal(item: StructureItem, mat: bpy.types.Material) -> None:
             item['gfx']['normal'] = None
     else:
         item['gfx']['normal'] = None
+
+
+def _set_roughness(item: StructureItem, mat: bpy.types.Material) -> None:
+    shader = get_shader_type(mat) if mat else None
+    node_name = shader_main_nodes.get(shader)
+    
+    if node_name:
+        main_node = mat.node_tree.nodes.get(node_name)
+
+        if main_node and main_node.inputs['Roughness']:
+            if main_node.inputs['Roughness'].is_linked:
+                image_texture_node = main_node.inputs['Roughness'].links[0].from_node
+
+                if hasattr(image_texture_node, "image"):
+                    item['gfx']['roughness'] = get_packed_file(image_texture_node.image)
+                else:
+                    value = int(main_node.inputs['Roughness'].default_value * 255)
+                    item['gfx']['roughness'] = (value, value, value, 255)
+            else:
+                value = int(main_node.inputs['Roughness'].default_value * 255)
+                item['gfx']['roughness'] = (value, value, value, 255)
+        else:
+            item['gfx']['roughness'] = None
+    else:
+        item['gfx']['roughness'] = None
 
 
 def _set_image_or_color(item: StructureItem, mat: bpy.types.Material) -> None:
@@ -371,9 +420,21 @@ def _paste_gfx_normal(scn: Scene, item: StructureItem, mat: bpy.types.Material, 
     )
 
 
+def _paste_gfx_roughness(scn: Scene, item: StructureItem, mat: bpy.types.Material, img: ImageType, half_gaps: int) -> None:
+    if not item['gfx']['fit'] or not item['gfx']['roughness']:
+        return
+    
+    scale_factor = 0.25  # roughness is a 1/4 of the size of the color or normal textures
+    
+    img.paste(
+        _get_gfx(scn, mat, item, item['gfx']['roughness'], False, scale_factor),
+        (int((item['gfx']['fit']['x'] + half_gaps) * scale_factor), int((item['gfx']['fit']['y'] + half_gaps) * scale_factor))
+    )
+
+
 def _get_gfx(scn: Scene, mat: bpy.types.Material, item: StructureItem,
-             img_or_color: Union[bpy.types.PackedFile, Tuple, None], multiply_color: bool) -> ImageType:
-    size = cast(Tuple[int, int], tuple(int(size - scn.smc_gaps) for size in item['gfx']['size']))
+             img_or_color: Union[bpy.types.PackedFile, Tuple, None], multiply_color: bool, scale_factor=1) -> ImageType:
+    size = cast(Tuple[int, int], tuple(int((size - scn.smc_gaps) * scale_factor) for size in item['gfx']['size']))
 
     if not img_or_color:
         return Image.new('RGBA', size, (1, 1, 1, 1))
@@ -456,7 +517,7 @@ def _get_scale_factors(atlas_size: Tuple[int, int], size: Tuple[int, int]) -> Tu
     return (1, 1 / aspect_ratio) if aspect_ratio > 1 else (aspect_ratio, 1)
 
 
-def get_comb_mats(scn: Scene, atlas: ImageType, atlas_n: ImageType, mats_uv: MatsUV) -> CombMats:
+def get_comb_mats(scn: Scene, atlas: ImageType, atlas_n: ImageType, atlas_r: ImageType, mats_uv: MatsUV) -> CombMats:
     # Color
     unique_id = _get_unique_id(scn)
     layers = _get_layers(scn, mats_uv)
@@ -467,8 +528,13 @@ def get_comb_mats(scn: Scene, atlas: ImageType, atlas_n: ImageType, mats_uv: Mat
     n_unique_id = _get_unique_id(scn)
     n_path = _save_atlas(scn, atlas_n, n_unique_id)
     n_texture = _create_texture(n_path, n_unique_id)
+    
+    # Roughness
+    r_unique_id = _get_unique_id(scn)
+    r_path = _save_atlas(scn, atlas_r, r_unique_id)
+    r_texture = _create_texture(r_path, r_unique_id)
 
-    return cast(CombMats, {idx: _create_material(texture, n_texture, unique_id, idx) for idx in layers})
+    return cast(CombMats, {idx: _create_material(texture, n_texture, r_texture, unique_id, idx) for idx in layers})
 
 
 def _get_layers(scn: Scene, mats_uv: MatsUV) -> Set[int]:
@@ -528,11 +594,12 @@ def _create_texture(path: str, unique_id: str) -> bpy.types.Texture:
     return texture
 
 
-def _create_material(texture: bpy.types.Texture, normal_texture: bpy.types.Texture, unique_id: str, idx: int) -> bpy.types.Material:
+def _create_material(texture: bpy.types.Texture, normal_texture: bpy.types.Texture, roughness_texture: bpy.types.Texture, unique_id: str, idx: int) -> bpy.types.Material:
     mat = bpy.data.materials.new(name='{0}{1}_{2}'.format(atlas_material_prefix, unique_id, idx))
     if globs.is_blender_2_80_or_newer:
         _configure_material(mat, texture)
         _configure_material_normal(mat, normal_texture)
+        _configure_material_roughness(mat, roughness_texture)
     else:
         _configure_material_legacy(mat, texture)
     return mat
@@ -555,10 +622,6 @@ def _configure_material(mat: bpy.types.Material, texture: bpy.types.Texture) -> 
 
 
 def _configure_material_normal(mat: bpy.types.Material, texture: bpy.types.Texture) -> None:
-    mat.blend_method = 'CLIP'
-    mat.use_backface_culling = True
-    mat.use_nodes = True
-
     node_texture = mat.node_tree.nodes.new(type='ShaderNodeTexImage')
     node_texture.image = texture.image
     node_texture.image.colorspace_settings.name = 'Non-Color'
@@ -571,6 +634,17 @@ def _configure_material_normal(mat: bpy.types.Material, texture: bpy.types.Textu
                             node_normal.inputs['Color'])
     mat.node_tree.links.new(node_normal.outputs['Normal'],
                             mat.node_tree.nodes['Principled BSDF'].inputs['Normal'])
+
+
+def _configure_material_roughness(mat: bpy.types.Material, texture: bpy.types.Texture) -> None:
+    node_texture = mat.node_tree.nodes.new(type='ShaderNodeTexImage')
+    node_texture.image = texture.image
+    node_texture.image.colorspace_settings.name = 'Non-Color'
+    node_texture.label = 'Material Combiner Texture Normal'
+    node_texture.location = -800, 0
+
+    mat.node_tree.links.new(node_texture.outputs['Color'],
+                            mat.node_tree.nodes['Principled BSDF'].inputs['Roughness'])
 
 
 def _configure_material_legacy(mat: bpy.types.Material, texture: bpy.types.Texture) -> None:
