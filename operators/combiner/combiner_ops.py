@@ -301,9 +301,10 @@ def get_atlas_normal(scn: Scene, data: Structure, atlas_size: Tuple[int, int]) -
 
 
 def get_atlas_roughness(scn: Scene, data: Structure, atlas_size: Tuple[int, int]) -> ImageType:
-    smc_size = (scn.smc_size_width, scn.smc_size_height)
-
     # Since the roughness is not as important as the color and the normal, reduce it's size by 4
+    smc_size = (int(scn.smc_size_width / 4), int(scn.smc_size_height / 4))
+
+    # Same here, reduce it's size by 4
     map_size = (int(atlas_size[0] / 4), int(atlas_size[1] / 4))
 
     img = Image.new('RGBA', map_size, color=(0, 0, 0, 255))  # White by default (max roughness)
