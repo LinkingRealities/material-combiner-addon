@@ -35,9 +35,10 @@ class Combiner(bpy.types.Operator):
 
         atlas_n = get_atlas_normal(scn, self.structure, atlas_size) # normal
         atlas_r = get_atlas_roughness(scn, self.structure, atlas_size) # roughness
+        atlas_m = get_atlas_metallic(scn, self.structure, atlas_size) # metallic
         atlas = get_atlas(scn, self.structure, atlas_size)
         align_uvs(scn, self.structure, atlas.size, size)
-        comb_mats = get_comb_mats(scn, atlas, atlas_n, atlas_r, self.mats_uv)
+        comb_mats = get_comb_mats(scn, atlas, atlas_n, atlas_r, atlas_m, self.mats_uv)
         assign_comb_mats(scn, self.data, comb_mats)
         clear_mats(scn, self.mats_uv)
         bpy.ops.smc.refresh_ob_data()
